@@ -1,9 +1,10 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 from gui.Entry import Entry
+from gui.Builder import Builder
 import subprocess
-from pprint import pprint
 import json
 import os
+
 CAMERA_TABLES = ["dispositivos_kundt", "dispositivos_pendulo", "dispositivos_estanque", "dispositivos_venturi"]
 SELECT_TEMPLATE = "SEARCH "
 PLATFORM = "esp32cam_ai_thinker"
@@ -21,9 +22,11 @@ class Handler(QtWidgets.QWidget):
         self.current_results = []
         self.current_index = 0
 
+        self.builder_thread = None
+        self.build_data = None
+
         # Widgets
         self.table_selector = QtWidgets.QComboBox(self)
-        self.search_button = QtWidgets.QPushButton("Search", self)
         self.info_label = QtWidgets.QLabel(self)
         self.next_button = QtWidgets.QPushButton("Next", self)
         self.refresh_button = QtWidgets.QPushButton("Refresh", self)
@@ -32,11 +35,13 @@ class Handler(QtWidgets.QWidget):
         
 
         # Initialize widgets
+        self.info_label.setAlignment(QtCore.Qt.AlignCenter)
         self.table_selector.addItems(CAMERA_TABLES)
         self.entry.setEnabled(False)
+        self.info_label.setStyleSheet('font-weight: bold')
 
         # Signals
-        self.search_button.clicked.connect(self.searchTable)
+        self.table_selector.currentIndexChanged.connect(self.searchTable)
         self.refresh_button.clicked.connect(self.refreshEntry)
         self.next_button.clicked.connect(self.nextEntry)
         self.back_button.clicked.connect(self.prevEntry)
@@ -46,7 +51,6 @@ class Handler(QtWidgets.QWidget):
 
         controls_layout = QtWidgets.QHBoxLayout()
         controls_layout.addWidget(self.table_selector)
-        controls_layout.addWidget(self.search_button)
         
         buttons_layout = QtWidgets.QHBoxLayout()
         buttons_layout.addWidget(self.back_button)
@@ -59,7 +63,7 @@ class Handler(QtWidgets.QWidget):
         self.layout.addWidget(self.entry)
         
     @QtCore.Slot()
-    def searchTable(self):
+    def searchTable(self, value):
         # Get current selection
         selection = self.table_selector.currentText()
         # Get all the results
@@ -80,47 +84,47 @@ class Handler(QtWidgets.QWidget):
     @QtCore.Slot()
     def updateProcess(self):
         # Get info for entry
-        entry_values = self.entry.serialize()
-        _id, _equipo, _device, _ip = entry_values
-        _, _, _, old_ip = self.current_results[self.current_index]
+        self.build_data = self.entry.serialize()
+        _id, _equipo, _device, _ip, _substring = self.build_data
         
         # Update config file
-        self.handleJSON(old_ip)
+        self.handleJSON(_ip)
 
         # Update firmware and wait
+        self.info_label.setStyleSheet('color: ')
         self.info_label.setText("Burning firmware. Please wait.")
         self.setEnabled(False)
-        build_pipe = subprocess.Popen(
-            [
-                'pio',
-                'run',
-                '-d',
-                self.project_path,
-                '-e',
-                PLATFORM,
-                '-t',
-                'upload'
-            ]
-            
-        )
-        return_code = build_pipe.wait()
+        
+        self.builder_thread = Builder(self.project_path, PLATFORM, self)
+        self.builder_thread.exit_code.connect(self.dbHandle)
+        self.builder_thread.start()
+        
+    @QtCore.Slot()
+    def dbHandle(self, result_code):
+        _id, _equipo, _device, _ip, _substring = self.build_data
+        # Generate new ip for registry
+        new_ip = _ip + _substring        
+
         self.setEnabled(True)
 
-        if return_code == 0:
+        if result_code == 0:
             # Update entry on db
             table = self.table_selector.currentText()
-            self.cursor.execute(f"UPDATE {table} SET equipo = {_equipo}, dispositivo = {_device}, ip = '{_ip}' WHERE id = {_id}")
+            self.cursor.execute(f"UPDATE {table} SET equipo = {_equipo}, dispositivo = {_device}, ip = '{new_ip}' WHERE id = {_id}")
             self.db.commit()
             
 
             # Retrive values with changes
             self.searchTable()
+            self.info_label.setStyleSheet('color: ')
             self.info_label.setText("Build completed. Values updated on DB.")
         else:
             self.info_label.setText("BUILD FAILED. Try again.")
+            self.info_label.setStyleSheet("color: red")
 
     def updateInfoLabel(self, n_results):
         # Check if results where found
+        self.info_label.setStyleSheet('color: ')
         if(n_results != 0):
             self.info_label.setText(f"{n_results} entries found!")
         else:
