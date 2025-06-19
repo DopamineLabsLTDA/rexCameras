@@ -9,6 +9,9 @@ CAMERA_TABLES = ["dispositivos_kundt", "dispositivos_pendulo", "dispositivos_est
 SELECT_TEMPLATE = "SEARCH "
 PLATFORM = "esp32cam_ai_thinker"
 JSON_COFIG_DEFAULT = "boards/esp32cam_ai_thinker.json"
+DEFAULT_GATEWAY = "192.168.0.1"
+DEFAULT_MASK = "255.255.255.0"
+
 
 class Handler(QtWidgets.QWidget):
     def __init__(self, db, project_path):
@@ -27,6 +30,8 @@ class Handler(QtWidgets.QWidget):
 
         # Widgets
         self.table_selector = QtWidgets.QComboBox(self)
+        self.gateway = QtWidgets.QLineEdit(self)
+        self.mask = QtWidgets.QLineEdit(self)
         self.info_label = QtWidgets.QLabel(self)
         self.next_button = QtWidgets.QPushButton("Next", self)
         self.refresh_button = QtWidgets.QPushButton("Refresh", self)
@@ -39,6 +44,8 @@ class Handler(QtWidgets.QWidget):
         self.table_selector.addItems(CAMERA_TABLES)
         self.entry.setEnabled(False)
         self.info_label.setStyleSheet('font-weight: bold')
+        self.gateway.setText(DEFAULT_GATEWAY)
+        self.mask.setText(DEFAULT_MASK)
 
         # Signals
         self.table_selector.currentIndexChanged.connect(self.searchTable)
@@ -49,8 +56,11 @@ class Handler(QtWidgets.QWidget):
         # Layout
         self.layout = QtWidgets.QVBoxLayout(self)
 
-        controls_layout = QtWidgets.QHBoxLayout()
-        controls_layout.addWidget(self.table_selector)
+        controls_layout = QtWidgets.QFormLayout()
+        controls_layout.addRow(self.table_selector)
+        controls_layout.addRow("GATEWAY:", self.gateway)
+        controls_layout.addRow("MASK:", self.mask)
+    
         
         buttons_layout = QtWidgets.QHBoxLayout()
         buttons_layout.addWidget(self.back_button)
@@ -115,7 +125,7 @@ class Handler(QtWidgets.QWidget):
             
 
             # Retrive values with changes
-            self.searchTable()
+            self.searchTable(0)
             self.info_label.setStyleSheet('color: ')
             self.info_label.setText("Build completed. Values updated on DB.")
         else:
@@ -161,11 +171,19 @@ class Handler(QtWidgets.QWidget):
         extra_flags = json_data['build']['extra_flags']
         
         for i, flag in enumerate(extra_flags):
-            if("REXBACK" not in flag):
-                continue
-            # Modify the flag to the desired ip value
-            a, b, c, d = ip.split(".")
-            extra_flags[i] = f"'-D REXBACK_IP = {a}, {b}, {c}, {d}'"
+            if("REXBACK_IP" in flag):
+                # Modify the flag to the desired ip value
+                a, b, c, d = ip.split(".")
+                extra_flags[i] = f"'-D REXBACK_IP = {a}, {b}, {c}, {d}'"
+            elif("REXBACK_GATE" in flag):
+                gateway = self.gateway.text()
+                a, b, c, d = gateway.split(".")
+                extra_flags[i] = f"'-D REXBACK_GATE = {a}, {b}, {c}, {d}'"
+            elif("REXBACK_MASK" in flag):
+                mask = self.mask.text()
+                a, b, c, d = mask.split(".")
+                extra_flags[i] = f"'-D REXBACK_MASK = {a}, {b}, {c}, {d}'"
+                
         # Update json and write to file
         json_data['build']['extra_flags'] = extra_flags
         json_obj = json.dumps(json_data, indent=2)
