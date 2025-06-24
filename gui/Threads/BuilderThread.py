@@ -1,17 +1,10 @@
 from PySide6 import QtCore
 import subprocess
+from .Common import CommonThread
 
-
-class Builder(QtCore.QThread):
-    exit_code = QtCore.Signal(int)
-
-    def __init__(self, path, platform, parent=None):
-        super().__init__(parent)
-        self.path = path
-        self.platform = platform
-        
+class Builder(CommonThread):
     def run(self):
-        # Run the build
+        # Build the firmware
         result_code = subprocess.run(
             [
                 'pio',
