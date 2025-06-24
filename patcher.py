@@ -26,6 +26,7 @@ if __name__ == '__main__':
     parser.add_argument("--db-pass", help="The database username password", required=True)
     parser.add_argument("--db-port", help="The port on which the database is attached", default=5432)
     parser.add_argument("--firmware", help="Folder of the firmware for the camera", required=True)
+    parser.add_argument("--config-json", help="The config file for the system memory", required=True)
     args = parser.parse_args()
     
     # Connect to postgreSQL
@@ -38,7 +39,7 @@ if __name__ == '__main__':
         
 
     app = QtWidgets.QApplication([])
-    widget = Handler(db, args.firmware)
+    widget = Handler(db, args.firmware, args.config_json)
     widget.show()
     sys.exit(app.exec())
     

@@ -40,10 +40,14 @@ class Entry(QtWidgets.QWidget):
             self.equipo_field.setValue(_equipo)
             self.device_field.setValue(_device)
             # Check if substring
+            _ip = _ip.replace("http://", "")
             check_substring = _ip.split('/')
             if(len(check_substring) > 1):
                 self.ip_field.setText(check_substring[0])
-                self.sub_string.setText("/"+check_substring[1])
+                sub_string = ""
+                for i in range(1, len(check_substring)):
+                    sub_string+="/" +check_substring[i]
+                self.sub_string.setText(sub_string)
             else:
                 self.ip_field.setText(_ip)
                 self.sub_string.setText("")

@@ -1,6 +1,8 @@
 from PySide6 import QtCore, QtWidgets, QtGui
 from gui.Entry import Entry
-from gui.Builder import Builder
+from gui.Threads.FSBuildThread import FSBuilder
+from gui.Threads.FSUploadThread import FSUpload
+from gui.Threads.BuilderThread import Builder
 import subprocess
 import json
 import os
@@ -12,15 +14,33 @@ JSON_COFIG_DEFAULT = "boards/esp32cam_ai_thinker.json"
 DEFAULT_GATEWAY = "192.168.0.1"
 DEFAULT_MASK = "255.255.255.0"
 
+DEFAULT_THING_NAME = "rexCamera-ESP32"
+DEFAULT_AP_PASS = "rexcamera"
+
+MAIN_KEY = "iwcAll"
+SYS_KEY = "iwcSys"
+THING_NAME_KEY = "iwcThingName"
+AP_PASS_KEY = "iwcApPassword"
+WIFI_KEY = "iwcWifi0"
+WIFI_SSID_KEY = "iwcWifiSsid"
+WIFI_PASS_KEY = "iwcWifiPassword"
+CUSTOM_KEY = "iwcCustom"
+CONN_KEY = "conn"
+CAMERA_KEY = "camera"
+IP_KEY = "ipAddress"
+GATE_KEY = "gateway"
+MASK_KEY = "netmask"
+
 
 class Handler(QtWidgets.QWidget):
-    def __init__(self, db, project_path):
+    def __init__(self, db, project_path, config_path):
         super().__init__()
         
         self.db = db
         self.cursor = db.cursor()
 
         self.project_path = project_path
+        self.config_path = config_path
 
         self.current_results = []
         self.current_index = 0
@@ -30,6 +50,10 @@ class Handler(QtWidgets.QWidget):
 
         # Widgets
         self.table_selector = QtWidgets.QComboBox(self)
+        self.thing_name = QtWidgets.QLineEdit(self)
+        self.ap_pass = QtWidgets.QLineEdit(self)
+        self.wifi_ssid = QtWidgets.QLineEdit(self)
+        self.wifi_pass = QtWidgets.QLineEdit(self)
         self.gateway = QtWidgets.QLineEdit(self)
         self.mask = QtWidgets.QLineEdit(self)
         self.info_label = QtWidgets.QLabel(self)
@@ -40,12 +64,15 @@ class Handler(QtWidgets.QWidget):
         
 
         # Initialize widgets
+        self.thing_name.setText(DEFAULT_THING_NAME)
+        self.ap_pass.setText(DEFAULT_AP_PASS)
         self.info_label.setAlignment(QtCore.Qt.AlignCenter)
         self.table_selector.addItems(CAMERA_TABLES)
         self.entry.setEnabled(False)
         self.info_label.setStyleSheet('font-weight: bold')
         self.gateway.setText(DEFAULT_GATEWAY)
         self.mask.setText(DEFAULT_MASK)
+        self.searchTable(0)
 
         # Signals
         self.table_selector.currentIndexChanged.connect(self.searchTable)
@@ -58,6 +85,10 @@ class Handler(QtWidgets.QWidget):
 
         controls_layout = QtWidgets.QFormLayout()
         controls_layout.addRow(self.table_selector)
+        controls_layout.addRow("Thing Name:", self.thing_name)
+        controls_layout.addRow("AP Password:", self.ap_pass)
+        controls_layout.addRow("SSID:", self.wifi_ssid)
+        controls_layout.addRow("PASS:", self.wifi_pass)
         controls_layout.addRow("GATEWAY:", self.gateway)
         controls_layout.addRow("MASK:", self.mask)
     
@@ -102,13 +133,49 @@ class Handler(QtWidgets.QWidget):
 
         # Update firmware and wait
         self.info_label.setStyleSheet('color: ')
-        self.info_label.setText("Burning firmware. Please wait.")
+        self.info_label.setText("Building filesystem.")
         self.setEnabled(False)
         
-        self.builder_thread = Builder(self.project_path, PLATFORM, self)
-        self.builder_thread.exit_code.connect(self.dbHandle)
+        # Start building process
+        self.builder_thread = FSBuilder(self.project_path, PLATFORM, self)
+        self.builder_thread.exit_code.connect(self.handleBuildFSExit)
         self.builder_thread.start()
+
+        #self.builder_thread = Builder(self.project_path, PLATFORM, self)
+        #self.builder_thread.exit_code.connect(self.dbHandle)
+        #self.builder_thread.start()
         
+    @QtCore.Slot()
+    def handleBuildFSExit(self, result_code):
+        # Check code value 
+        if(result_code != 0):
+            # Error during process
+            self.info_label.setText("Filesystem build failed.")
+            self.info_label.setStyleSheet("color: red")
+            self.setEnabled(True)
+            self.builder_thread = None
+        else:
+            # Process completed: Upload filesystem
+            self.builder_thread = FSUpload(self.project_path, PLATFORM, self)
+            self.builder_thread.exit_code.connect(self.handleUploadFSExit)
+            self.info_label.setText("Uploading filesystem.")
+            self.builder_thread.start()
+            
+    @QtCore.Slot()
+    def handleUploadFSExit(self, result_code):
+        if (result_code != 0):
+            # Error during process
+            self.info_label.setText("Filesystem upload error.")
+            self.info_label.setStyleSheet("color: red")
+            self.setEnabled(True)
+            self.builder_thread = None
+        else:
+            # Process completed: Build firmware
+            self.builder_thread = Builder(self.project_path, PLATFORM, self)
+            self.builder_thread.exit_code.connect(self.dbHandle)            
+            self.info_label.setText("Building firmware")
+            self.builder_thread.start()
+
     @QtCore.Slot()
     def dbHandle(self, result_code):
         _id, _equipo, _device, _ip, _substring = self.build_data
@@ -163,29 +230,27 @@ class Handler(QtWidgets.QWidget):
         self.refreshEntry()
         
     def handleJSON(self, ip):
-        json_path = os.path.join(self.project_path, JSON_COFIG_DEFAULT)
-        with open(json_path, 'r') as json_file:
+        with open(self.config_path, 'r') as json_file:
             json_data = json.load(json_file)
-            
-        # Handle the macro flag
-        extra_flags = json_data['build']['extra_flags']
         
-        for i, flag in enumerate(extra_flags):
-            if("REXBACK_IP" in flag):
-                # Modify the flag to the desired ip value
-                a, b, c, d = ip.split(".")
-                extra_flags[i] = f"'-D REXBACK_IP = {a}, {b}, {c}, {d}'"
-            elif("REXBACK_GATE" in flag):
-                gateway = self.gateway.text()
-                a, b, c, d = gateway.split(".")
-                extra_flags[i] = f"'-D REXBACK_GATE = {a}, {b}, {c}, {d}'"
-            elif("REXBACK_MASK" in flag):
-                mask = self.mask.text()
-                a, b, c, d = mask.split(".")
-                extra_flags[i] = f"'-D REXBACK_MASK = {a}, {b}, {c}, {d}'"
-                
-        # Update json and write to file
-        json_data['build']['extra_flags'] = extra_flags
-        json_obj = json.dumps(json_data, indent=2)
-        with open(json_path, 'w') as out_json:
+        # Main system parameters
+        system_parameters = json_data[MAIN_KEY][SYS_KEY]
+        # -> Update name
+        system_parameters[THING_NAME_KEY] = self.thing_name.text()
+        # -> ap password
+        system_parameters[AP_PASS_KEY] = self.ap_pass.text()
+        # -> Setup wifi
+        system_parameters[WIFI_KEY][WIFI_SSID_KEY] = self.wifi_ssid.text()
+        system_parameters[WIFI_KEY][WIFI_PASS_KEY] = self.wifi_pass.text()
+        
+        # Connection parameters
+        conn_parameters = json_data[MAIN_KEY][CUSTOM_KEY][CONN_KEY]
+        # -> Set static ip
+        conn_parameters[IP_KEY] = ip
+        conn_parameters[GATE_KEY] = self.gateway.text()
+        conn_parameters[MASK_KEY] = self.mask.text()
+
+        # Write onto the file
+        json_obj = json.dumps(json_data, indent=4)
+        with open(self.config_path, 'w') as out_json:
             out_json.write(json_obj)
