@@ -20,22 +20,23 @@ import json
 if __name__ == '__main__':
     parser =  argparse.ArgumentParser(description=ARGS_DESCRIPTION)
     # parser.add_argument("--port", help="The port on which the ESP32 camera is connected.", required=True)
-    parser.add_argument("--db-url", help="The database URL.", required=True)
-    parser.add_argument("--db-name", help="The database name", required=True)
-    parser.add_argument("--db-user", help="The database username", required=True)
-    parser.add_argument("--db-pass", help="The database username password", required=True)
+    parser.add_argument("--db-url", help="The database URL.")
+    parser.add_argument("--db-name", help="The database name")
+    parser.add_argument("--db-user", help="The database username")
+    parser.add_argument("--db-pass", help="The database username password")
     parser.add_argument("--db-port", help="The port on which the database is attached", default=5432)
     parser.add_argument("--firmware", help="Folder of the firmware for the camera", required=True)
     parser.add_argument("--config-json", help="The config file for the system memory", required=True)
     args = parser.parse_args()
     
     # Connect to postgreSQL
-    db = psycopg2.connect(
-        database=args.db_name,
-        host=args.db_url,
-        user=args.db_user,
-        password=args.db_pass,
-        port=args.db_port)
+    # db = psycopg2.connect(
+    #     database=args.db_name,
+    #     host=args.db_url,
+    #     user=args.db_user,
+    #     password=args.db_pass,
+    #     port=args.db_port)
+    db = None
         
 
     app = QtWidgets.QApplication([])

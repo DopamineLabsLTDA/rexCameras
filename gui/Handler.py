@@ -1,5 +1,7 @@
 from PySide6 import QtCore, QtWidgets, QtGui
+from gui.Camera import CameraWidget
 from gui.Entry import Entry
+from gui.Platform import PlatformWidget
 from gui.Threads.FSBuildThread import FSBuilder
 from gui.Threads.FSUploadThread import FSUpload
 from gui.Threads.BuilderThread import Builder
@@ -35,9 +37,6 @@ MASK_KEY = "netmask"
 class Handler(QtWidgets.QWidget):
     def __init__(self, db, project_path, config_path):
         super().__init__()
-        
-        self.db = db
-        self.cursor = db.cursor()
 
         self.project_path = project_path
         self.config_path = config_path
@@ -49,7 +48,10 @@ class Handler(QtWidgets.QWidget):
         self.build_data = None
 
         # Widgets
-        self.table_selector = QtWidgets.QComboBox(self)
+        self.camera_config_widget = CameraWidget(self)
+        self.platform_config_widget = PlatformWidget(self)
+
+
         self.thing_name = QtWidgets.QLineEdit(self)
         self.ap_pass = QtWidgets.QLineEdit(self)
         self.wifi_ssid = QtWidgets.QLineEdit(self)
@@ -57,9 +59,6 @@ class Handler(QtWidgets.QWidget):
         self.gateway = QtWidgets.QLineEdit(self)
         self.mask = QtWidgets.QLineEdit(self)
         self.info_label = QtWidgets.QLabel(self)
-        self.next_button = QtWidgets.QPushButton("Next", self)
-        self.refresh_button = QtWidgets.QPushButton("Refresh", self)
-        self.back_button = QtWidgets.QPushButton("Back", self)
         self.entry = Entry(self.updateProcess, self)
         
 
@@ -67,24 +66,20 @@ class Handler(QtWidgets.QWidget):
         self.thing_name.setText(DEFAULT_THING_NAME)
         self.ap_pass.setText(DEFAULT_AP_PASS)
         self.info_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.table_selector.addItems(CAMERA_TABLES)
         self.entry.setEnabled(False)
         self.info_label.setStyleSheet('font-weight: bold')
         self.gateway.setText(DEFAULT_GATEWAY)
         self.mask.setText(DEFAULT_MASK)
-        self.searchTable(0)
+        # self.searchTable(0)
 
         # Signals
-        self.table_selector.currentIndexChanged.connect(self.searchTable)
-        self.refresh_button.clicked.connect(self.refreshEntry)
-        self.next_button.clicked.connect(self.nextEntry)
-        self.back_button.clicked.connect(self.prevEntry)
 
         # Layout
         self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.addWidget(self.camera_config_widget)
+        self.layout.addWidget(self.platform_config_widget)
 
         controls_layout = QtWidgets.QFormLayout()
-        controls_layout.addRow(self.table_selector)
         controls_layout.addRow("Thing Name:", self.thing_name)
         controls_layout.addRow("AP Password:", self.ap_pass)
         controls_layout.addRow("SSID:", self.wifi_ssid)
@@ -93,29 +88,12 @@ class Handler(QtWidgets.QWidget):
         controls_layout.addRow("MASK:", self.mask)
     
         
-        buttons_layout = QtWidgets.QHBoxLayout()
-        buttons_layout.addWidget(self.back_button)
-        buttons_layout.addWidget(self.refresh_button)
-        buttons_layout.addWidget(self.next_button)
+        # buttons_layout = QtWidgets.QHBoxLayout()
         
         self.layout.addLayout(controls_layout)
         self.layout.addWidget(self.info_label)
-        self.layout.addLayout(buttons_layout)
+        # self.layout.addLayout(buttons_layout)
         self.layout.addWidget(self.entry)
-        
-    @QtCore.Slot()
-    def searchTable(self, value):
-        # Get current selection
-        selection = self.table_selector.currentText()
-        # Get all the results
-        self.cursor.execute(f"SELECT * FROM {selection} ORDER BY id;")
-        results = self.cursor.fetchall()
-        n_results = len(results)
-        # Update widgets
-        self.updateInfoLabel(n_results)
-        self.current_results = results
-        self.current_index = 0
-        self.refreshEntry()
         
     @QtCore.Slot()
     def refreshEntry(self):
@@ -176,28 +154,6 @@ class Handler(QtWidgets.QWidget):
             self.info_label.setText("Building firmware")
             self.builder_thread.start()
 
-    @QtCore.Slot()
-    def dbHandle(self, result_code):
-        _id, _equipo, _device, _ip, _substring = self.build_data
-        # Generate new ip for registry
-        new_ip = _ip + _substring        
-
-        self.setEnabled(True)
-
-        if result_code == 0:
-            # Update entry on db
-            table = self.table_selector.currentText()
-            self.cursor.execute(f"UPDATE {table} SET equipo = {_equipo}, dispositivo = {_device}, ip = '{new_ip}' WHERE id = {_id}")
-            self.db.commit()
-            
-
-            # Retrive values with changes
-            self.searchTable(0)
-            self.info_label.setStyleSheet('color: ')
-            self.info_label.setText("Build completed. Values updated on DB.")
-        else:
-            self.info_label.setText("BUILD FAILED. Try again.")
-            self.info_label.setStyleSheet("color: red")
 
     def updateInfoLabel(self, n_results):
         # Check if results where found
