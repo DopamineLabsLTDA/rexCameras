@@ -1,13 +1,10 @@
-from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6 import QtCore, QtWidgets
 from gui.Camera import CameraWidget
-from gui.Entry import Entry
 from gui.Platform import PlatformWidget
 from gui.Threads.FSBuildThread import FSBuilder
 from gui.Threads.FSUploadThread import FSUpload
 from gui.Threads.BuilderThread import Builder
-import subprocess
 import json
-import os
 
 CAMERA_TABLES = ["dispositivos_kundt", "dispositivos_pendulo", "dispositivos_estanque", "dispositivos_venturi"]
 SELECT_TEMPLATE = "SEARCH "
@@ -35,7 +32,7 @@ MASK_KEY = "netmask"
 
 
 class Handler(QtWidgets.QWidget):
-    def __init__(self, db, project_path, config_path):
+    def __init__(self, project_path, config_path):
         super().__init__()
 
         self.project_path = project_path
@@ -49,66 +46,33 @@ class Handler(QtWidgets.QWidget):
 
         # Widgets
         self.camera_config_widget = CameraWidget(self)
-        self.platform_config_widget = PlatformWidget(self)
-
-
-        self.thing_name = QtWidgets.QLineEdit(self)
-        self.ap_pass = QtWidgets.QLineEdit(self)
-        self.wifi_ssid = QtWidgets.QLineEdit(self)
-        self.wifi_pass = QtWidgets.QLineEdit(self)
-        self.gateway = QtWidgets.QLineEdit(self)
-        self.mask = QtWidgets.QLineEdit(self)
         self.info_label = QtWidgets.QLabel(self)
-        self.entry = Entry(self.updateProcess, self)
+        self.start_stop_button = QtWidgets.QPushButton('Inicio', self)
         
 
         # Initialize widgets
-        self.thing_name.setText(DEFAULT_THING_NAME)
-        self.ap_pass.setText(DEFAULT_AP_PASS)
         self.info_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.entry.setEnabled(False)
         self.info_label.setStyleSheet('font-weight: bold')
-        self.gateway.setText(DEFAULT_GATEWAY)
-        self.mask.setText(DEFAULT_MASK)
-        # self.searchTable(0)
 
         # Signals
+        self.start_stop_button.clicked.connect(self.start_stop_handle)
 
         # Layout
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.addWidget(self.camera_config_widget)
-        self.layout.addWidget(self.platform_config_widget)
 
-        controls_layout = QtWidgets.QFormLayout()
-        controls_layout.addRow("Thing Name:", self.thing_name)
-        controls_layout.addRow("AP Password:", self.ap_pass)
-        controls_layout.addRow("SSID:", self.wifi_ssid)
-        controls_layout.addRow("PASS:", self.wifi_pass)
-        controls_layout.addRow("GATEWAY:", self.gateway)
-        controls_layout.addRow("MASK:", self.mask)
-    
+
+        buttons_layout = QtWidgets.QHBoxLayout()
+        buttons_layout.addWidget(self.start_stop_button)
         
-        # buttons_layout = QtWidgets.QHBoxLayout()
-        
-        self.layout.addLayout(controls_layout)
         self.layout.addWidget(self.info_label)
-        # self.layout.addLayout(buttons_layout)
-        self.layout.addWidget(self.entry)
+        self.layout.addLayout(buttons_layout)
         
     @QtCore.Slot()
-    def refreshEntry(self):
-        self.entry.fill(self.current_results, self.current_index)
 
 
     @QtCore.Slot()
     def updateProcess(self):
-        # Get info for entry
-        self.build_data = self.entry.serialize()
-        _id, _equipo, _device, _ip, _substring = self.build_data
-        
-        # Update config file
-        self.handleJSON(_ip)
-
         # Update firmware and wait
         self.info_label.setStyleSheet('color: ')
         self.info_label.setText("Building filesystem.")
@@ -119,9 +83,6 @@ class Handler(QtWidgets.QWidget):
         self.builder_thread.exit_code.connect(self.handleBuildFSExit)
         self.builder_thread.start()
 
-        #self.builder_thread = Builder(self.project_path, PLATFORM, self)
-        #self.builder_thread.exit_code.connect(self.dbHandle)
-        #self.builder_thread.start()
         
     @QtCore.Slot()
     def handleBuildFSExit(self, result_code):
@@ -150,7 +111,6 @@ class Handler(QtWidgets.QWidget):
         else:
             # Process completed: Build firmware
             self.builder_thread = Builder(self.project_path, PLATFORM, self)
-            self.builder_thread.exit_code.connect(self.dbHandle)            
             self.info_label.setText("Building firmware")
             self.builder_thread.start()
 
@@ -164,49 +124,32 @@ class Handler(QtWidgets.QWidget):
             self.info_label.setText("No entries found.")
             
 
-    @QtCore.Slot()
-    def nextEntry(self):
-        n_entries = len(self.current_results)
-        if self.current_index == n_entries -1:
-            self.current_index = 0
-        else:
-            self.current_index +=1
-            
-        # Call update to entry widget
-        self.refreshEntry()
-        
-    @QtCore.Slot()
-    def prevEntry(self):
-        n_entries = len(self.current_results)
-        if self.current_index == 0:
-            self.current_index = n_entries -1
-        else:
-            self.current_index -= 1
-        # Update widget
-        self.refreshEntry()
-        
-    def handleJSON(self, ip):
+    def handleJSON(self):
         with open(self.config_path, 'r') as json_file:
             json_data = json.load(json_file)
         
         # Main system parameters
         system_parameters = json_data[MAIN_KEY][SYS_KEY]
         # -> Update name
-        system_parameters[THING_NAME_KEY] = self.thing_name.text()
+        system_parameters[THING_NAME_KEY] = self.camera_config_widget.getThingName()
         # -> ap password
-        system_parameters[AP_PASS_KEY] = self.ap_pass.text()
+        system_parameters[AP_PASS_KEY] = self.camera_config_widget.getAPPass()
         # -> Setup wifi
-        system_parameters[WIFI_KEY][WIFI_SSID_KEY] = self.wifi_ssid.text()
-        system_parameters[WIFI_KEY][WIFI_PASS_KEY] = self.wifi_pass.text()
+        system_parameters[WIFI_KEY][WIFI_SSID_KEY] = self.camera_config_widget.getWiFiSSID()
+        system_parameters[WIFI_KEY][WIFI_PASS_KEY] = self.camera_config_widget.getWiFiPass()
         
         # Connection parameters
         conn_parameters = json_data[MAIN_KEY][CUSTOM_KEY][CONN_KEY]
         # -> Set static ip
-        conn_parameters[IP_KEY] = ip
-        conn_parameters[GATE_KEY] = self.gateway.text()
-        conn_parameters[MASK_KEY] = self.mask.text()
+        conn_parameters[IP_KEY] = self.camera_config_widget.getIP()
+        conn_parameters[GATE_KEY] = self.camera_config_widget.getGateway()
+        conn_parameters[MASK_KEY] = self.camera_config_widget.getNetmask()
 
         # Write onto the file
         json_obj = json.dumps(json_data, indent=4)
         with open(self.config_path, 'w') as out_json:
             out_json.write(json_obj)
+
+    def start_stop_handle(self):
+        self.handleJSON()
+        self.updateProcess()

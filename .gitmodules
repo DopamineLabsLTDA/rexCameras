@@ -1,0 +1,3 @@
+[submodule "esp32CamFirmware"]
+	path = esp32CamFirmware
+	url = git@github.com:DopamineLabsLTDA/esp32CamFirmware.git

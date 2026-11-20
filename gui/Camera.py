@@ -28,3 +28,24 @@ class CameraWidget(QtWidgets.QGroupBox):
         self.setLayout(layout)
         
 
+
+    def getThingName(self):
+        return self.thing_name.text()
+
+    def getAPPass(self):
+        return self.ap_password.text()
+
+    def getWiFiSSID(self):
+        return self.ssid.text()
+
+    def getWiFiPass(self):
+        return self.password.text()
+
+    def getIP(self):
+        return self.ip.text()
+
+    def getGateway(self):
+        return self.gateway.text()
+
+    def getNetmask(self):
+        return self.netmask.text()
